@@ -1,0 +1,510 @@
+# Liquor Management System — Setup guide, commands, and example code
+
+> Mobile-first, simple UI/UX, HTML/CSS/JS frontend + Convex DB backend. This document shows: project layout, Convex schema & functions, frontend snippets, backup automation, and exact commands you can run to push to your GitHub repo.
+
+---
+
+## TL;DR (what I'll give you)
+
+1. Exact shell commands to create the project, install Convex, and **log in** to Convex and GitHub from your machine.
+2. A minimal but complete Convex schema and server functions (addStock, removeStock, createTransaction, queries, analytics helpers).
+3. Mobile-first frontend (index.html, styles.css, app.js) that talks to Convex via the Convex JS client (bundled with Vite). Plain HTML/CSS/JS only — no frameworks.
+4. A Git / GitHub flow you run locally to push this code to your repo `https://github.com/muneeswarreddy740-cpu/Liquor-Management-System.git` (I **cannot** push for you, but every command is here). If you want, run these commands in your terminal and it will push from the account you've authenticated with.
+5. Daily automatic backup recipe (GitHub Actions) that exports Convex data and stores it as an artifact / uploads to S3 — plus how to enable periodic backups from Convex Dashboard (Convex Pro note).
+
+---
+
+## IMPORTANT NOTES / LIMITATIONS
+
+* I **cannot** access your machine or your GitHub account. I will not push commits for you. I will give exact commands (`git`, `gh auth login`, `npx convex login`, etc.) so you can run them and push to the repo.
+* Convex CLI + client are used — Convex is modern and expects a small build step (we'll use Vite). The frontend remains plain HTML/CSS/JS (ES modules).
+* For secure delete operations we perform server-side password checks inside Convex server functions. You must set the owner password as a deployment secret (explained below).
+
+---
+
+## 0) Prerequisites (install these first)
+
+```bash
+# Node + npm (v16+ recommended)
+node -v
+npm -v
+
+# Git and GitHub CLI (optional but helpful)
+git --version
+gh --version
+```
+
+---
+
+## 1) Clone the repo (or create new local project) and configure remote
+
+If you already cloned the repo run from your project folder; otherwise:
+
+```bash
+# clone the repo (read/write requires that your account has push rights)
+git clone https://github.com/muneeswarreddy740-cpu/Liquor-Management-System.git
+cd Liquor-Management-System
+
+# set your name / email
+git config user.name "Your Name"
+git config user.email "you@example.com"
+```
+
+If you want to push using a different GitHub user, either:
+
+* use `gh auth login` to authenticate that user on your machine, or
+* configure SSH keys for that GitHub account and add the SSH remote.
+
+**Login with GitHub CLI (recommended):**
+
+```bash
+# authenticate with GitHub (opens browser)
+gh auth login
+```
+
+After logging in you can push normally with `git push origin main` (or `master`).
+
+---
+
+## 2) Create project skeleton and install Convex (commands to run)
+
+We'll create a lightweight project using Vite so the Convex client (an npm package) can be used from pure JS modules. Run inside the repo folder:
+
+```bash
+# inside the repo
+npm init -y
+npm install convex
+npm install -D vite
+
+# create a basic dev script in package.json (open package.json and add):
+# "scripts": { "dev": "vite", "build": "vite build", "preview": "vite preview" }
+```
+
+Create folders:
+
+```
+/ (repo root)
+  /convex               # Convex schema + server functions
+  /public               # static assets
+    index.html
+    styles.css
+    app.js
+  package.json
+  README.md
+  .gitignore
+  .github/workflows/backup.yml  # optional (CI backup)
+```
+
+---
+
+## 3) Convex quick setup (CLI)
+
+Install Convex and create a local dev deployment. From your project folder:
+
+```bash
+# install convex already done above (npm install convex)
+# start convex dev environment; this will let you choose to log in or run locally
+npx convex dev
+
+# When you are ready to deploy to the cloud (production/dev), use:
+npx convex deploy
+```
+
+Notes from Convex docs:
+
+* `npx convex dev` will offer to run locally without login or let you login (stored at `~/.convex/config.json`). Logging in gives your CLI a user token that can push code and read/write data to deployments. (Docs: Convex CLI).
+
+---
+
+## 4) Convex schema (convex/schema.ts)
+
+Create `convex/schema.ts` — Convex's schema is TypeScript-ish. Example schema for our needs:
+
+```ts
+// convex/schema.ts
+import { defineSchema, defineTable, s } from 'convex/schema'
+
+export default defineSchema({
+  brands: defineTable({
+    name: s.string(),            // e.g. "Johnnie Walker"
+    type: s.string(),            // e.g. "Black Label 750ml"
+    price: s.number(),           // price per bottle
+    quantity: s.number(),        // current in-store quantity
+    createdAt: s.number(),       // timestamp when stock batch added
+    updatedAt: s.number(),
+  }),
+
+  transactions: defineTable({
+    brandId: s.id('brands'),     // reference to brands table
+    quantity: s.number(),        // bottles sold
+    totalAmount: s.number(),
+    paymentMethod: s.string(),   // 'cash' or 'upi'
+    customerName: s.optional(s.string()),
+    customerPhone: s.optional(s.string()),
+    createdAt: s.number(),
+  }),
+
+  backups: defineTable({
+    // optional: store backups metadata if you want to track manual backups
+    path: s.string(),
+    createdAt: s.number(),
+  }),
+})
+```
+
+> Convex supports `defineSchema` and `defineTable` in `convex/schema.ts`. Save this file and `npx convex deploy` will pick up the schema when you deploy.
+
+---
+
+## 5) Convex server functions (convex/ folder)
+
+Place server-side mutations and queries in `convex/` files. Example functions (TypeScript) — these ensure stock & transactions are updated atomically.
+
+**convex/addStock.ts**
+
+```ts
+import { mutation } from './_generated/server'
+import { v } from 'convex/values'
+
+export default mutation({
+  args: v.type({ name: v.string(), type: v.string(), price: v.number(), quantity: v.number() }),
+  handler: async ({ db }, { name, type, price, quantity }) => {
+    const now = Date.now()
+    // upsert: if brand+type exists, increment quantity and update price
+    const existing = await db.query('brands').filter((b) => b.name.eq(name).and(b.type.eq(type))).first()
+    if (existing) {
+      await db.patch(existing._id, {
+        quantity: existing.quantity + quantity,
+        price,
+        updatedAt: now,
+      })
+      return { ok: true }
+    }
+    await db.insert('brands', { name, type, price, quantity, createdAt: now, updatedAt: now })
+    return { ok: true }
+  }
+})
+```
+
+**convex/removeStock.ts**
+
+```ts
+import { mutation } from './_generated/server'
+import { v } from 'convex/values'
+
+export default mutation({
+  args: v.type({ brandId: v.id('brands'), quantity: v.number() }),
+  handler: async ({ db }, { brandId, quantity }) => {
+    const brand = await db.get(brandId)
+    if (!brand) throw new Error('Brand not found')
+    if (brand.quantity < quantity) throw new Error('Not enough stock')
+    await db.patch(brandId, { quantity: brand.quantity - quantity, updatedAt: Date.now() })
+    return { ok: true }
+  }
+})
+```
+
+**convex/createTransaction.ts**
+
+```ts
+import { mutation } from './_generated/server'
+import { v } from 'convex/values'
+
+export default mutation({
+  args: v.type({ brandId: v.id('brands'), quantity: v.number(), paymentMethod: v.string(), customerName: v.optional(v.string()), customerPhone: v.optional(v.string()) }),
+  handler: async ({ db }, { brandId, quantity, paymentMethod, customerName, customerPhone }) => {
+    const brand = await db.get(brandId)
+    if (!brand) throw new Error('Brand not found')
+    if (brand.quantity < quantity) throw new Error('Not enough stock')
+
+    const totalAmount = quantity * brand.price
+    const now = Date.now()
+
+    // create transaction and decrement stock atomically
+    await db.insert('transactions', { brandId, quantity, totalAmount, paymentMethod, customerName, customerPhone, createdAt: now })
+    await db.patch(brandId, { quantity: brand.quantity - quantity, updatedAt: now })
+    return { ok: true, totalAmount }
+  }
+})
+```
+
+**convex/queries.ts** (queries for dashboard & transactions)
+
+```ts
+import { query } from './_generated/server'
+
+export const allTransactions = query(async ({ db }) => {
+  return await db.query('transactions').order('desc', 'createdAt').collect()
+})
+
+export const todaysTransactions = query(async ({ db }) => {
+  const dayStart = Date.now() - 24*60*60*1000
+  return await db.query('transactions').filter((t) => t.createdAt.gt(dayStart)).collect()
+})
+
+// add more parametric queries for date ranges, monthly, yearly, etc.
+```
+
+> Save these function files in `convex/` then run `npx convex deploy` to push schema + functions to your Convex deployment.
+
+---
+
+## 6) Frontend (mobile-first) — `public/index.html`, `public/styles.css`, `public/app.js`
+
+Minimal example that uses Convex client in the browser via ES modules and Vite. The client usage pattern follows Convex docs: import { ConvexClient } from 'convex/browser'
+
+**public/index.html**
+
+```html
+<!doctype html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/styles.css">
+  <title>Liquor Shop</title>
+</head>
+<body>
+  <main id="app">
+    <header>
+      <h1>Liquor Shop — Sell</h1>
+    </header>
+
+    <section id="sell-form">
+      <!-- searchable brand select (type to filter) -->
+      <input id="brand-search" placeholder="Search brand or type" />
+      <div id="brand-suggestions"></div>
+
+      <input id="quantity" type="number" min="1" value="1" />
+
+      <select id="paymentMethod">
+        <option value="cash">Cash</option>
+        <option value="upi">UPI/QR</option>
+      </select>
+
+      <button id="checkout">Checkout</button>
+    </section>
+
+    <section id="analytics">
+      <h2>Analytics</h2>
+      <div id="summary"></div>
+    </section>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
+```
+
+**public/styles.css**
+
+```css
+/* mobile-first */
+body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;padding:12px;background:#fafafa}
+header h1{font-size:1.1rem;margin:0 0 12px}
+#sell-form input, #sell-form select, #sell-form button{display:block;width:100%;padding:12px;margin-bottom:8px;border-radius:8px;border:1px solid #ddd}
+#brand-suggestions{background:#fff;border:1px solid #eee;padding:6px;border-radius:8px}
+#summary{padding:8px;background:#fff;border-radius:8px;border:1px solid #eee}
+
+/* larger screens */
+@media(min-width:800px){
+  main{max-width:900px;margin:0 auto}
+}
+```
+
+**public/app.js**
+
+```js
+import { ConvexHttpClient } from 'convex/browser'
+
+// Replace with your dev deployment URL from `npx convex dev` or deployed URL
+const convex = new ConvexHttpClient(import.meta.env.VITE_CONVEX_URL || '/_convex')
+
+const brandSearch = document.getElementById('brand-search')
+const brandSuggestions = document.getElementById('brand-suggestions')
+const quantityInput = document.getElementById('quantity')
+const paymentSelect = document.getElementById('paymentMethod')
+const checkoutBtn = document.getElementById('checkout')
+
+let selectedBrand = null
+
+brandSearch.addEventListener('input', async (e)=>{
+  const q = e.target.value.trim().toLowerCase()
+  if (!q) { brandSuggestions.innerHTML = ''; return }
+  // simple query to Convex: get brands with name or type matching substring
+  const results = await convex.query('allBrands') // you'll implement server query to return filtered brands
+  const filtered = results.filter(b => (b.name + ' ' + b.type).toLowerCase().includes(q))
+  brandSuggestions.innerHTML = filtered.map(b => `<div class="sugg" data-id="${b._id}">${b.name} — ${b.type} (${b.quantity})</div>`).join('')
+  brandSuggestions.querySelectorAll('.sugg').forEach(el => el.addEventListener('click', ()=>{
+    const id = el.dataset.id
+    selectedBrand = filtered.find(x => x._id === id)
+    brandSearch.value = `${selectedBrand.name} — ${selectedBrand.type}`
+    brandSuggestions.innerHTML = ''
+  }))
+})
+
+checkoutBtn.addEventListener('click', async ()=>{
+  if (!selectedBrand) return alert('Select brand')
+  const qty = Number(quantityInput.value || 0)
+  if (qty <= 0) return alert('Enter a valid quantity')
+
+  // call createTransaction mutation
+  try{
+    const res = await convex.mutation('createTransaction', { brandId: selectedBrand._id, quantity: qty, paymentMethod: paymentSelect.value })
+    alert('Sale recorded. Total: ' + (res?.totalAmount ?? 'N/A'))
+    // refresh analytics UI (call queries)
+  } catch(e){
+    alert('Error: ' + e.message)
+  }
+})
+
+// Note: this is minimal; implement queries to load analytics & transaction pages similarly
+```
+
+> The above `app.js` assumes you will implement a `allBrands` query on the server to return brand docs. The Convex SDK in browser uses `ConvexHttpClient` and expects a convex endpoint; `npx convex dev` will start a dev proxy.
+
+---
+
+## 7) Protecting deletes with an owner password
+
+Strategy:
+
+1. Store the owner password as a Convex environment secret (or set it as an environment variable when deploying): `CONVEX_OWNER_PASSWORD`.
+2. The client calls a server mutation `deleteTransaction` or `deleteBrand` with the provided password. The Convex server function checks the password before performing destructive actions.
+
+**convex/deleteTransaction.ts**
+
+```ts
+import { mutation } from './_generated/server'
+import { v } from 'convex/values'
+
+export default mutation({
+  args: v.type({ transactionId: v.id('transactions'), ownerPassword: v.string() }),
+  handler: async ({ db }, { transactionId, ownerPassword }) => {
+    // compare with process.env - set this env securely before deploy
+    if (ownerPassword !== process.env.CONVEX_OWNER_PASSWORD) throw new Error('Unauthorized')
+    await db.delete(transactionId)
+    return { ok: true }
+  }
+})
+```
+
+**Important:** Use a strong password and never commit it to source. In Convex cloud you can set environment variables or use the deployment `--env-file` when deploying.
+
+---
+
+## 8) Backups (manual + scheduled)
+
+* Manual: In Convex Dashboard -> Backups -> "Backup Now". You can download a zip snapshot.
+* CLI manual export: `npx convex export --path ./backups/$(date +%F).zip`
+
+**Automated backups (GitHub Actions example)** — create `.github/workflows/backup.yml`:
+
+```yaml
+name: Convex Backup
+on:
+  schedule:
+    - cron: '0 1 * * *' # daily at 01:00 UTC (adjust)
+  workflow_dispatch: {}
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - run: npm ci
+      - run: npx convex export --path ./backups/backup-$(date +%F).zip
+        env:
+          CONVEX_ACCESS_TOKEN: ${{ secrets.CONVEX_ACCESS_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: convex-backup
+          path: ./backups/backup-*.zip
+```
+
+Notes:
+
+* A Convex token that can run `convex export` must be stored in the repository secrets (`CONVEX_ACCESS_TOKEN`).
+* Convex cloud also provides periodic backups inside the dashboard — you can enable daily backups (note: periodic backups require Convex Pro plan). See Convex docs.
+
+---
+
+## 9) Git / push workflow (commands you run locally)
+
+```bash
+# after creating files & testing locally
+git add .
+git commit -m "Initial Liquor Management System + Convex schema & functions"
+
+# confirm remote (if you cloned earlier):
+git remote -v
+
+# push to origin main
+git push origin main
+
+# if push denied because of auth, run:
+gh auth login
+# then push again
+```
+
+If you prefer to push using a different remote URL (e.g. your own fork):
+
+```bash
+git remote set-url origin https://github.com/<your-username>/Liquor-Management-System.git
+git push -u origin main
+```
+
+---
+
+## 10) Local development quick flow
+
+```bash
+# start convex dev (prompts login or local mode)
+npx convex dev
+
+# start Vite dev server
+npm run dev
+
+# open browser to Vite server (usually http://localhost:5173)
+```
+
+`npx convex dev` provides a local HTTP proxy for the Convex client so your `ConvexHttpClient` can talk to it.
+
+---
+
+## 11) Next steps / optional improvements (small roadmap)
+
+* Add pagination and filters to transactions page (by date range: today/week/month/year).
+* Add CSV export for transactions.
+* Add a simple auth layer for staff (Clerk/Netlify Identity) if you want multi-user.
+* Add file/image storage for product pictures (Convex supports file storage).
+* Add barcode scanning (mobile camera) to add items faster.
+
+---
+
+## 12) I can do this for you — what I need from you to push
+
+If you want me to prepare the actual project files in the repo for you to run, I can: I will produce a ZIP or create the file contents here. BUT I cannot `git push` as a different GitHub user. If you want GUI-less push from this conversation you can:
+
+1. Run the auth commands locally (`gh auth login`) with the GitHub account that has rights to the repo.
+2. Run the `git add . && git commit && git push` commands above.
+
+If you'd like, I can now:
+
+* generate the exact file contents for every file (index.html, styles.css, app.js, convex/\*.ts, package.json, .github workflow) and put them into this canvas so you can copy/paste or download them. Tell me: *Do you want the full files now?*
+
+---
+
+### Useful Convex docs I used to assemble these commands
+
+* Convex CLI docs (install & commands): `npm install convex`, `npx convex dev`, `npx convex deploy`.
+* Convex schema & functions examples (`convex/schema.ts`, `convex/*.ts`).
+* Convex export/backup: `npx convex export --path <folder>`
+
+(Links: pulled from Convex docs while preparing this plan.)
+
+---
+
+If you want the full code files now (I will create them in this canvas as text for you to copy), reply `YES FILES` and I will generate every file (convex schema, functions, full frontend) ready-to-copy into your repo. If you want me to tailor the UI copy or add features (CSV export, barcode scanner, user auth), tell me which one — I'll include it in the files.
