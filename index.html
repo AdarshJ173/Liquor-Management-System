@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Liquor Management System</title>
+    <link rel="stylesheet" href="./style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-brand">
+            <h1>🍺 Liquor Shop</h1>
+        </div>
+        <div class="nav-menu" id="navMenu">
+            <a href="#" class="nav-link active" data-page="sell">Sell</a>
+            <a href="#" class="nav-link" data-page="stock">Stock</a>
+            <a href="#" class="nav-link" data-page="transactions">Transactions</a>
+            <a href="#" class="nav-link" data-page="analytics">Analytics</a>
+        </div>
+        <button class="nav-toggle" id="navToggle">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main">
+        <!-- Sell Page (Default) -->
+        <div class="page active" id="sellPage">
+            <div class="page-header">
+                <h2>💰 Point of Sale</h2>
+                <p>Search and sell liquor bottles</p>
+            </div>
+
+            <form class="sell-form" id="sellForm">
+                <div class="form-group">
+                    <label for="brandSearch">Search Brand</label>
+                    <div class="search-container">
+                        <input 
+                            type="text" 
+                            id="brandSearch" 
+                            placeholder="Type to search brands..." 
+                            autocomplete="off"
+                        >
+                        <div class="suggestions" id="brandSuggestions"></div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="quantity">Quantity</label>
+                        <input type="number" id="quantity" min="1" value="1" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="paymentMethod">Payment Method</label>
+                        <select id="paymentMethod" required>
+                            <option value="cash">💵 Cash</option>
+                            <option value="upi">📱 UPI/QR</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="customerName">Customer Name (Optional)</label>
+                        <input type="text" id="customerName" placeholder="Enter customer name">
+                    </div>
+                    <div class="form-group">
+                        <label for="customerPhone">Customer Phone (Optional)</label>
+                        <input type="tel" id="customerPhone" placeholder="Enter phone number">
+                    </div>
+                </div>
+
+                <div class="sale-summary" id="saleSummary" style="display: none;">
+                    <h3>Sale Summary</h3>
+                    <p id="summaryText"></p>
+                    <p class="total-amount" id="totalAmount"></p>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="checkoutBtn" disabled>
+                    🛒 Complete Sale
+                </button>
+            </form>
+        </div>
+
+        <!-- Stock Management Page -->
+        <div class="page" id="stockPage">
+            <div class="page-header">
+                <h2>📦 Stock Management</h2>
+                <p>Add, remove, and manage inventory</p>
+            </div>
+
+            <!-- Add Stock Section -->
+            <div class="section">
+                <h3>➕ Add Stock</h3>
+                <form class="stock-form" id="addStockForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="brandName">Brand Name</label>
+                            <input type="text" id="brandName" placeholder="e.g., Johnnie Walker" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="brandType">Type/Size</label>
+                            <input type="text" id="brandType" placeholder="e.g., Black Label 750ml" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="brandPrice">Price per Bottle (₹)</label>
+                            <input type="number" id="brandPrice" min="0" step="0.01" placeholder="Enter price" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="brandQuantity">Quantity</label>
+                            <input type="number" id="brandQuantity" min="1" placeholder="Enter quantity" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-success">➕ Add to Stock</button>
+                </form>
+            </div>
+
+            <!-- Current Stock Section -->
+            <div class="section">
+                <h3>📋 Current Stock</h3>
+                <div class="stock-filters">
+                    <input type="text" id="stockSearch" placeholder="Search stock...">
+                    <select id="stockFilter">
+                        <option value="all">All Stock</option>
+                        <option value="low">Low Stock (≤5)</option>
+                        <option value="out">Out of Stock</option>
+                    </select>
+                </div>
+                <div class="stock-grid" id="stockGrid">
+                    <div class="loading">Loading stock...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Transactions Page -->
+        <div class="page" id="transactionsPage">
+            <div class="page-header">
+                <h2>📊 Transaction History</h2>
+                <p>View and manage all sales transactions</p>
+            </div>
+
+            <div class="section">
+                <div class="filters">
+                    <div class="filter-group">
+                        <label>Date Range:</label>
+                        <select id="dateFilter">
+                            <option value="today">Today</option>
+                            <option value="week">This Week</option>
+                            <option value="month">This Month</option>
+                            <option value="year">This Year</option>
+                            <option value="custom">Custom Range</option>
+                        </select>
+                    </div>
+                    <div class="filter-group custom-dates" id="customDates" style="display: none;">
+                        <input type="date" id="dateFrom">
+                        <span>to</span>
+                        <input type="date" id="dateTo">
+                        <button type="button" class="btn btn-small" id="applyDateFilter">Apply</button>
+                    </div>
+                </div>
+
+                <div class="transactions-summary" id="transactionsSummary"></div>
+                <div class="transactions-list" id="transactionsList">
+                    <div class="loading">Loading transactions...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analytics Page -->
+        <div class="page" id="analyticsPage">
+            <div class="page-header">
+                <h2>📈 Analytics Dashboard</h2>
+                <p>Business insights and performance metrics</p>
+            </div>
+
+            <div class="analytics-filters">
+                <select id="analyticsDateFilter">
+                    <option value="today">Today</option>
+                    <option value="week">This Week</option>
+                    <option value="month">This Month</option>
+                    <option value="year">This Year</option>
+                    <option value="all">All Time</option>
+                </select>
+            </div>
+
+            <div class="metrics-grid" id="metricsGrid">
+                <div class="loading">Loading analytics...</div>
+            </div>
+
+            <div class="charts-section">
+                <div class="chart-container">
+                    <h3>Top Selling Brands</h3>
+                    <div id="topBrandsChart" class="chart-placeholder">Loading chart...</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Password Modal for Sensitive Operations -->
+    <div class="modal" id="passwordModal" style="display: none;">
+        <div class="modal-content">
+            <h3>🔒 Owner Authentication Required</h3>
+            <p>This operation requires owner password verification.</p>
+            <input type="password" id="ownerPassword" placeholder="Enter owner password">
+            <div class="modal-buttons">
+                <button type="button" class="btn btn-danger" id="confirmAction">Confirm</button>
+                <button type="button" class="btn btn-secondary" id="cancelAction">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script type="module" src="./app.js"></script>
+</body>
+</html>
