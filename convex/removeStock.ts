@@ -18,19 +18,27 @@ export default mutation({
       throw new Error("Brand not found");
     }
 
-    if (brand.quantity < quantity) {
+    // For complete deletion, allow removing all stock if quantity is very high
+    const isCompleteRemoval = quantity >= 99999;
+    
+    if (!isCompleteRemoval && brand.quantity < quantity) {
       throw new Error(`Not enough stock. Available: ${brand.quantity}, Requested: ${quantity}`);
     }
 
-    const newQuantity = brand.quantity - quantity;
+    const newQuantity = isCompleteRemoval ? 0 : Math.max(0, brand.quantity - quantity);
     await db.patch(brandId, {
       quantity: newQuantity,
       updatedAt: Date.now(),
     });
 
+    const actualRemoved = brand.quantity - newQuantity;
+    const message = isCompleteRemoval 
+      ? `Completely removed ${brand.name} ${brand.type} from inventory (removed ${actualRemoved} bottles)`
+      : `Removed ${actualRemoved} bottles of ${brand.name} ${brand.type}. Remaining: ${newQuantity}`;
+      
     return {
       success: true,
-      message: `Removed ${quantity} bottles of ${brand.name} ${brand.type}. Remaining: ${newQuantity}`,
+      message,
     };
   },
 });

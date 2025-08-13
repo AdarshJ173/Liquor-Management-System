@@ -20,6 +20,7 @@
             <a href="#" class="nav-link" data-page="stock">Stock</a>
             <a href="#" class="nav-link" data-page="transactions">Transactions</a>
             <a href="#" class="nav-link" data-page="analytics">Analytics</a>
+            <a href="#" class="nav-link" data-page="stock-history">Stock History</a>
         </div>
         <button class="nav-toggle" id="navToggle">
             <span></span>
@@ -34,57 +35,75 @@
         <div class="page active" id="sellPage">
             <div class="page-header">
                 <h2>💰 Point of Sale</h2>
-                <p>Search and sell liquor bottles</p>
+                <p>Build a cart, enter customer details, and complete the sale.</p>
             </div>
 
-            <form class="sell-form" id="sellForm">
-                <div class="form-group">
-                    <label for="brandSearch">Search Brand</label>
-                    <div class="search-container">
-                        <input 
-                            type="text" 
-                            id="brandSearch" 
-                            placeholder="Type to search brands..." 
-                            autocomplete="off"
-                        >
-                        <div class="suggestions" id="brandSuggestions"></div>
+            <form id="sellForm">
+                <!-- Add Item Section -->
+                <div class="section">
+                    <h3>1. Add Item to Cart</h3>
+                    <div class="form-group">
+                        <label for="brandSearch">Search Brand</label>
+                        <div class="search-container">
+                            <input type="text" id="brandSearch" placeholder="Type to search brands..." autocomplete="off">
+                            <div class="suggestions" id="brandSuggestions"></div>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="quantity">Quantity</label>
+                            <input type="number" id="quantity" min="1" value="1" required>
+                        </div>
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <button type="button" class="btn btn-success" id="addToCartBtn" disabled>➕ Add to Cart</button>
+                        </div>
                     </div>
                 </div>
 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="quantity">Quantity</label>
-                        <input type="number" id="quantity" min="1" value="1" required>
+                <!-- Shopping Cart Section -->
+                <div class="section" id="cartSection" style="display: none;">
+                    <div class="cart-header">
+                        <h3>2. Shopping Cart</h3>
+                        <button type="button" class="btn btn-warning btn-small" id="clearCartBtn">🗑️ Clear Cart</button>
                     </div>
-                    <div class="form-group">
-                        <label for="paymentMethod">Payment Method</label>
-                        <select id="paymentMethod" required>
-                            <option value="cash">💵 Cash</option>
-                            <option value="upi">📱 UPI/QR</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="customerName">Customer Name (Optional)</label>
-                        <input type="text" id="customerName" placeholder="Enter customer name">
-                    </div>
-                    <div class="form-group">
-                        <label for="customerPhone">Customer Phone (Optional)</label>
-                        <input type="tel" id="customerPhone" placeholder="Enter phone number">
+                    <div id="cartItems" class="cart-items"></div>
+                    <div class="cart-summary">
+                        <div class="cart-total">
+                            <strong>Cart Total: ₹<span id="cartTotal">0</span></strong>
+                        </div>
                     </div>
                 </div>
 
-                <div class="sale-summary" id="saleSummary" style="display: none;">
-                    <h3>Sale Summary</h3>
-                    <p id="summaryText"></p>
-                    <p class="total-amount" id="totalAmount"></p>
+                <!-- Checkout Section -->
+                <div class="section" id="checkoutDetailsSection">
+                    <h3>3. Finalize Sale</h3>
+                    <div class="form-row">
+                         <div class="form-group">
+                            <label for="paymentMethod">Payment Method</label>
+                            <select id="paymentMethod" required>
+                                <option value="cash">💵 Cash</option>
+                                <option value="upi">📱 UPI/QR</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="customerName">Customer Name (Optional)</label>
+                            <input type="text" id="customerName" placeholder="Enter customer name">
+                        </div>
+                        <div class="form-group">
+                            <label for="customerPhone">Customer Phone (Optional)</label>
+                            <input type="tel" id="customerPhone" placeholder="Enter phone number">
+                        </div>
+                    </div>
+                    <div class="checkout-summary">
+                        <div class="final-total">
+                            <span>Final Amount: ₹<span id="checkoutTotal">0</span></span>
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="checkoutBtn" disabled>🛒 Complete Sale</button>
+                    </div>
                 </div>
-
-                <button type="submit" class="btn btn-primary" id="checkoutBtn" disabled>
-                    🛒 Complete Sale
-                </button>
             </form>
         </div>
 
@@ -121,6 +140,25 @@
                     </div>
                     <button type="submit" class="btn btn-success">➕ Add to Stock</button>
                 </form>
+                
+                <!-- Total Stock Value -->
+                <div class="stock-summary">
+                    <div class="total-stock-value">
+                        <div class="value" id="totalStockValue">₹0</div>
+                        <div class="label">Total Stock Value</div>
+                    </div>
+                </div>
+                
+                <!-- Stock Entry History -->
+                <div class="stock-history-section">
+                    <h4>📈 Stock Entry History</h4>
+                    <div class="stock-history-actions">
+                        <button class="btn btn-small" id="viewStockHistoryBtn">📋 View Full History</button>
+                    </div>
+                    <div class="stock-entries-list" id="stockEntriesList">
+                        <div class="loading">Loading stock entries...</div>
+                    </div>
+                </div>
             </div>
 
             <!-- Current Stock Section -->
@@ -157,6 +195,14 @@
                             <option value="month">This Month</option>
                             <option value="year">This Year</option>
                             <option value="custom">Custom Range</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Payment Method:</label>
+                        <select id="paymentFilter">
+                            <option value="all">All Payments</option>
+                            <option value="cash">💵 Cash Only</option>
+                            <option value="upi">📱 UPI/QR Only</option>
                         </select>
                     </div>
                     <div class="filter-group custom-dates" id="customDates" style="display: none;">
@@ -202,6 +248,30 @@
                 </div>
             </div>
         </div>
+
+        <!-- Stock History Page -->
+        <div class="page" id="stock-historyPage">
+            <div class="page-header">
+                <h2>📈 Stock Entry History</h2>
+                <p>Detailed record of all stock additions over time</p>
+            </div>
+
+            <div class="section">
+                <div class="history-summary" id="historySummary">
+                    <div class="summary-card">
+                        <div class="value" id="totalHistoryValue">₹0</div>
+                        <div class="label">Total Stock Added (All Time)</div>
+                    </div>
+                </div>
+
+                <div class="stock-history-content">
+                    <h3>📊 Stock Additions by Week</h3>
+                    <div class="stock-history-list" id="stockHistoryList">
+                        <div class="loading">Loading stock history...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </main>
 
     <!-- Password Modal for Sensitive Operations -->
@@ -213,6 +283,44 @@
             <div class="modal-buttons">
                 <button type="button" class="btn btn-danger" id="confirmAction">Confirm</button>
                 <button type="button" class="btn btn-secondary" id="cancelAction">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Dialog Modal -->
+    <div class="modal" id="customDialog" style="display: none;">
+        <div class="modal-content">
+            <h3 id="dialogTitle">Confirm Action</h3>
+            <p id="dialogMessage">Are you sure?</p>
+            <div id="dialogInput" style="display: none; margin-top: 15px;">
+                <label id="inputLabel" for="dialogInputField">Enter value:</label>
+                <input type="number" id="dialogInputField" class="form-input" min="0">
+                <div id="inputHelp" style="font-size: 0.9rem; color: #666; margin-top: 5px;"></div>
+            </div>
+            <div class="modal-buttons">
+                <button id="dialogConfirm" class="btn btn-primary">Confirm</button>
+                <button id="dialogCancel" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Restock Modal -->
+    <div class="modal" id="restockModal" style="display: none;">
+        <div class="modal-content">
+            <h3 id="restockTitle">🔄 Restock Item</h3>
+            <p id="restockMessage">Add more inventory for this item:</p>
+            <div style="margin: 15px 0;">
+                <label for="restockQuantity">Quantity to Add:</label>
+                <input type="number" id="restockQuantity" class="form-input" min="1" value="1">
+            </div>
+            <div style="margin: 15px 0;">
+                <label for="restockPrice">Price per Bottle (₹):</label>
+                <input type="number" id="restockPrice" class="form-input" min="0" step="0.01">
+            </div>
+            <div id="restockInfo" style="font-size: 0.9rem; color: #666; margin-top: 10px;"></div>
+            <div class="modal-buttons">
+                <button id="restockConfirm" class="btn btn-primary">🔄 Restock</button>
+                <button id="restockCancel" class="btn btn-secondary">Cancel</button>
             </div>
         </div>
     </div>

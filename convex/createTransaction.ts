@@ -22,7 +22,7 @@ export default mutation({
     const totalAmount = quantity * brand.price;
     const now = Date.now();
 
-    // Create transaction record
+    // Create transaction record (single item format)
     const transactionId = await db.insert("transactions", {
       brandId,
       brandName: brand.name,
@@ -34,6 +34,7 @@ export default mutation({
       customerName,
       customerPhone,
       createdAt: now,
+      transactionType: "single",
     });
 
     // Update brand stock
